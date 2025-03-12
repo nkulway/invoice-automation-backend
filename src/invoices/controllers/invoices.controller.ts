@@ -1,6 +1,6 @@
 import { Controller, Post, Body, Get, Param } from '@nestjs/common'
 import { InvoicesService } from '../services/invoices.service'
-import { TextractService } from '../../textract/textract.service'
+import { TextractService } from '../../textract/services/textract.service'
 import { Invoice } from '../entities/invoice.entity'
 import { CreateInvoiceDto } from '../dto/create-invoice.dto'
 import { AnalyzeExpenseCommandOutput } from '@aws-sdk/client-textract'
