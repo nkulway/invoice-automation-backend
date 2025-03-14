@@ -4,7 +4,6 @@
 
 import { Injectable } from '@nestjs/common'
 
-// Define interfaces for line items and bill-to address.
 export interface LineItem {
   description: string
   quantity: number
@@ -29,7 +28,6 @@ export interface ParsedExpense {
   billTo?: BillToAddress
 }
 
-// Helper function to parse summary fields and separate "bill to" info.
 function parseSummaryFields(summaryFields: any[]): {
   vendor: string
   totalAmount: number
@@ -48,7 +46,7 @@ function parseSummaryFields(summaryFields: any[]): {
     const groupTypes: string[] = field.GroupProperties?.[0]?.Types || []
 
     if (groupTypes.includes('RECEIVER_BILL_TO')) {
-      // Map common field types to bill-to properties.
+      // Map common field types to bill-to properties
       if (typeText.includes('address_block')) {
         billTo.addressBlock = valueText
       } else if (typeText.includes('street')) {
@@ -63,7 +61,7 @@ function parseSummaryFields(summaryFields: any[]): {
         billTo.name = valueText
       }
     } else {
-      // Process fields that belong to the main invoice info.
+      // Process fields that belong to the main invoice info
       if (typeText.includes('vendor')) {
         vendor = valueText
       }
@@ -85,7 +83,7 @@ function parseSummaryFields(summaryFields: any[]): {
   return { vendor, totalAmount, invoiceDate, billTo }
 }
 
-// Helper function to parse line items from LineItemGroups.
+// Helper function to parse line items from LineItemGroups
 function parseLineItems(lineItemGroups: any[]): LineItem[] {
   const lineItems: LineItem[] = []
 
@@ -103,7 +101,6 @@ function parseLineItems(lineItemGroups: any[]): LineItem[] {
           const fieldType = field.Type?.Text?.toLowerCase() || ''
           const fieldValue = field.ValueDetection?.Text || ''
 
-          // Identify which fields map to which property:
           if (fieldType.includes('item') || fieldType.includes('product')) {
             description = fieldValue
           }
@@ -156,9 +153,6 @@ export class TextractParserService {
 
     const lineItemGroups = expenseDocument.LineItemGroups || []
     const lineItems = parseLineItems(lineItemGroups)
-
-    // We ignore geometry, polygons, bounding boxes, confidence, etc.
-    // by never referencing them in the code.
 
     return { vendor, totalAmount, invoiceDate, lineItems, billTo }
   }

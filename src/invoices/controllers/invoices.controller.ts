@@ -17,7 +17,7 @@ export class InvoicesController {
     // Create the invoice record in the database
     const invoice = await this.invoicesService.create(createInvoiceDto)
 
-    // After storing, call Textract to process the invoice image.
+    // call Textract to process the invoice image
     try {
       const textractResult: AnalyzeExpenseCommandOutput =
         await this.textractService.analyzeInvoice(
@@ -27,7 +27,6 @@ export class InvoicesController {
       console.log('Textract result:', textractResult)
     } catch (error) {
       console.error('Error processing invoice via Textract:', error)
-      // Optionally, update the invoice record with an error status here.
     }
 
     return invoice

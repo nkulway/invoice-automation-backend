@@ -10,7 +10,7 @@ export class TextractService {
   private client: TextractClient
 
   constructor() {
-    this.client = new TextractClient({ region: 'us-east-1' }) // Adjust region as needed
+    this.client = new TextractClient({ region: 'us-east-1' }) // should probably be an external config
   }
 
   async analyzeInvoice(
