@@ -3,7 +3,9 @@ import {
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
+  OneToMany,
 } from 'typeorm'
+import { InvoiceLineItem } from './invoice-line-item.entity'
 
 @Entity()
 export class Invoice {
@@ -21,4 +23,14 @@ export class Invoice {
 
   @CreateDateColumn()
   createdAt: Date
+
+  // Optional: store full Textract response for debugging or further processing
+  @Column({ type: 'json', nullable: true })
+  textractData?: any
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  @OneToMany(() => InvoiceLineItem, (lineItem) => lineItem.invoice, {
+    cascade: true,
+  })
+  lineItems: InvoiceLineItem[]
 }
