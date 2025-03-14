@@ -38,8 +38,9 @@ export class InvoicesService {
       invoice.vendor = parsedData.vendor || invoice.vendor
       invoice.totalAmount = parsedData.totalAmount || invoice.totalAmount
       invoice.invoiceDate = parsedData.invoiceDate || invoice.invoiceDate
+      invoice.parsedData = parsedData
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      invoice.textractData = parsedData
+      invoice.textractData = textractOutput
     }
 
     // Save updated invoice with parsed data

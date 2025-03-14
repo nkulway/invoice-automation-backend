@@ -107,13 +107,16 @@ function parseLineItems(lineItemGroups: any[]): LineItem[] {
           if (fieldType.includes('item') || fieldType.includes('product')) {
             description = fieldValue
           }
-          if (fieldType.includes('quantity')) {
+          if (
+            fieldType.includes('quantity') ||
+            fieldType.includes('qty available')
+          ) {
             const q = parseInt(fieldValue, 10)
             if (!isNaN(q)) {
               quantity = q
             }
           }
-          if (fieldType.includes('unit')) {
+          if (fieldType.includes('unit') || fieldType.includes('subtotal')) {
             unit = fieldValue
           }
           if (fieldType.includes('price')) {

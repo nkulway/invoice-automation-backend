@@ -24,6 +24,9 @@ export class Invoice {
   @CreateDateColumn()
   createdAt: Date
 
+  @Column({ type: 'json', nullable: true })
+  parsedData?: any
+
   // Optional: store full Textract response for debugging or further processing
   @Column({ type: 'json', nullable: true })
   textractData?: any
