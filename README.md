@@ -2,22 +2,14 @@
 
 Invoice Automation Backend is a NestJS-based application designed to automate restaurant invoice processing. The system leverages AWS Textract to extract relevant invoice data (vendor, total amount, invoice date, line items, and bill-to address) from invoice images stored in S3, and then stores the parsed data in a PostgreSQL database.
 
----
-
 ## Table of Contents
 
 - [Features](#features)
 - [Prerequisites](#prerequisites)
 - [Installation and Setup](#installation-and-setup)
-- [Configuration](#configuration)
 - [Running the Application](#running-the-application)
 - [API Endpoints](#api-endpoints)
-- [Testing](#testing)
 - [Project Structure](#project-structure)
-- [Contributing](#contributing)
-- [License](#license)
-
----
 
 ## Features
 
@@ -36,16 +28,12 @@ Invoice Automation Backend is a NestJS-based application designed to automate re
 - **Modular Design:**  
   Built with NestJS to ensure easy extensibility and maintainability.
 
----
-
 ## Prerequisites
 
-- **Node.js** (v14 or later)
+- **Node.js** (>= v22.14.0)
 - **npm**
 - **PostgreSQL** (local instance or via Docker)
 - **AWS Account** (for AWS Textract and S3 integration)
-
----
 
 ## Installation and Setup
 
@@ -65,7 +53,6 @@ Invoice Automation Backend is a NestJS-based application designed to automate re
 3. **Setup Your Database:**
 - If you're using Docker, you can run a local Postgres instance
 
----
 
 ## Running the Application
 
@@ -74,22 +61,20 @@ Invoice Automation Backend is a NestJS-based application designed to automate re
    npm run start:dev
    ```
 
----
 
 ## API Endpoints
 - **POST /invoices**
-  Create a new invoice by providing a JSON payload with fields like vendor, totalAmount, invoiceDate, s3Bucket, and documentKey.
+  - Create a new invoice by providing a JSON payload with fields like vendor, totalAmount, invoiceDate, s3Bucket, and documentKey.
 
 - **GET /invoices**
-  Retrieve a list of all invoices.
+  - Get a list of all invoices.
 
 - **GET /invoices/:id**
-  Retrieve a specific invoice by its ID.
+  - Get a specific invoice by Id.
 
----
 
 ## Project Structure
-
+```plaintext
 invoice-automation-backend/
 ├── src/
 │   ├── invoices/
@@ -116,3 +101,4 @@ invoice-automation-backend/
 ├── .env
 ├── package.json
 └── README.md
+
