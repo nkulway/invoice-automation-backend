@@ -8,22 +8,14 @@ import {
 } from '@aws-sdk/client-sqs'
 import {
   TextractClient,
-  StartDocumentAnalysisCommand,
-  GetDocumentAnalysisCommand,
+  StartExpenseAnalysisCommand,
+  GetExpenseAnalysisCommand,
 } from '@aws-sdk/client-textract'
 import { AppDataSource } from '../data-source'
 import * as dotenv from 'dotenv'
 import { Invoice } from '../invoices/entities/invoice.entity'
 import { TextractParserService } from '../textract/services/textract-parser.service'
 dotenv.config()
-
-// Ensure DataSource is initialized before processing
-async function ensureDataSourceInitialized() {
-  if (!AppDataSource.isInitialized) {
-    await AppDataSource.initialize()
-    console.log('Data Source has been initialized in consumer!')
-  }
-}
 
 // Helper function for delay (for polling)
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -38,36 +30,48 @@ if (!queueUrl) {
 // Setup AWS Textract client
 const textractClient = new TextractClient({ region: process.env.AWS_REGION })
 
+// Ensure DataSource is initialized
+async function ensureDataSourceInitialized() {
+  if (!AppDataSource.isInitialized) {
+    await AppDataSource.initialize()
+    console.log('Data Source has been initialized in consumer!')
+  }
+}
+
 async function processInvoiceJob(messageBody: any) {
   // Destructure job details
   const { invoiceId, s3Bucket, documentKey } = messageBody
 
-  // Start asynchronous Textract analysis for multi-page invoices
-  const startCommand = new StartDocumentAnalysisCommand({
+  // Use StartExpenseAnalysisCommand for expense documents (invoices)
+  const startCommand = new StartExpenseAnalysisCommand({
     DocumentLocation: {
       S3Object: {
         Bucket: s3Bucket,
         Name: documentKey,
       },
     },
-    FeatureTypes: ['TABLES', 'FORMS'],
+    // Optionally specify additional parameters here if needed
   })
 
   const startResponse = await textractClient.send(startCommand)
   const jobId = startResponse.JobId
-  console.log(`Started Textract job for invoice ${invoiceId}, JobId: ${jobId}`)
+  console.log(
+    `Started Textract expense analysis for invoice ${invoiceId}, JobId: ${jobId}`,
+  )
 
-  // Poll for job completion
+  // Poll for job completion using GetExpenseAnalysisCommand
   let jobStatus = 'IN_PROGRESS'
   let textractOutput: any
   while (jobStatus === 'IN_PROGRESS') {
     await delay(5000)
-    const getCommand = new GetDocumentAnalysisCommand({ JobId: jobId })
+    const getCommand = new GetExpenseAnalysisCommand({ JobId: jobId })
     textractOutput = await textractClient.send(getCommand)
     jobStatus = textractOutput.JobStatus || 'IN_PROGRESS'
     console.log(`Invoice ${invoiceId} JobStatus: ${jobStatus}`)
     if (jobStatus === 'FAILED') {
-      throw new Error(`Textract job failed for invoice ${invoiceId}`)
+      throw new Error(
+        `Textract expense analysis job failed for invoice ${invoiceId}`,
+      )
     }
   }
 
@@ -92,7 +96,7 @@ async function processInvoiceJob(messageBody: any) {
 }
 
 async function pollQueue() {
-  // Ensure the DataSource is initialized
+  // Ensure DataSource is initialized
   await ensureDataSourceInitialized()
 
   const params = {
