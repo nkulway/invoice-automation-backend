@@ -24,13 +24,15 @@ export class Invoice {
   @CreateDateColumn()
   createdAt: Date
 
-  // Ensure this relation is correctly defined.
+  // New field for processing status
+  @Column({ default: 'PENDING' })
+  processingStatus: string
+
   @OneToMany(() => InvoiceLineItem, (lineItem) => lineItem.invoice, {
     cascade: true,
   })
   lineItems: InvoiceLineItem[]
 
-  // Optional: additional fields for raw/parsed data
   @Column({ type: 'json', nullable: true })
   parsedData?: any
 
