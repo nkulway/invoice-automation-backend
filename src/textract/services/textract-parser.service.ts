@@ -1,31 +1,29 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-
 import { Injectable } from '@nestjs/common'
+import {
+  ParsedExpense,
+  LineItem,
+  BillToAddress,
+} from './textract-parser.interfaces'
 
-export interface LineItem {
-  description: string
-  quantity: number
-  unit: string
-  price: number
-}
+// Aggregates an asynchronous Textract response
+function aggregateExpenseDocument(blocks: any[]): any {
+  const expenseDocument: any = {
+    SummaryFields: [] as any[],
+    LineItemGroups: [] as any[],
+  }
 
-export interface BillToAddress {
-  name?: string
-  addressBlock?: string
-  street?: string
-  city?: string
-  state?: string
-  zipCode?: string
-}
+  // For simplicity, we assume that KEY_VALUE_SET blocks are summary fields
+  blocks.forEach((block) => {
+    if (block.BlockType === 'KEY_VALUE_SET') {
+      expenseDocument.SummaryFields.push(block)
+    }
+    // Optionally, add logic to aggregate line items if your response contains them
+  })
 
-export interface ParsedExpense {
-  vendor: string
-  totalAmount: number
-  invoiceDate: Date
-  lineItems: LineItem[]
-  billTo?: BillToAddress
+  return expenseDocument
 }
 
 function parseSummaryFields(summaryFields: any[]): {
@@ -36,17 +34,17 @@ function parseSummaryFields(summaryFields: any[]): {
 } {
   let vendor = ''
   let totalAmount = 0
-  let invoiceDate: Date = new Date()
+  let invoiceDate = new Date()
   const billTo: BillToAddress = {}
 
   summaryFields.forEach((field) => {
-    // We only care about Type?.Text and ValueDetection?.Text
-    const typeText = field.Type?.Text?.toLowerCase() || ''
+    const typeText = (field.Type?.Text || '').toLowerCase()
     const valueText = field.ValueDetection?.Text || ''
+    // Check if this field is part of a RECEIVER_BILL_TO group.
     const groupTypes: string[] = field.GroupProperties?.[0]?.Types || []
 
     if (groupTypes.includes('RECEIVER_BILL_TO')) {
-      // Map common field types to bill-to properties
+      // Map common field types to bill-to address field
       if (typeText.includes('address_block')) {
         billTo.addressBlock = valueText
       } else if (typeText.includes('street')) {
@@ -61,7 +59,7 @@ function parseSummaryFields(summaryFields: any[]): {
         billTo.name = valueText
       }
     } else {
-      // Process fields that belong to the main invoice info
+      // Process invoice header fields.
       if (typeText.includes('vendor')) {
         vendor = valueText
       }
@@ -72,9 +70,9 @@ function parseSummaryFields(summaryFields: any[]): {
         }
       }
       if (typeText.includes('date')) {
-        const date = new Date(valueText)
-        if (!isNaN(date.getTime())) {
-          invoiceDate = date
+        const d = new Date(valueText)
+        if (!isNaN(d.getTime())) {
+          invoiceDate = d
         }
       }
     }
@@ -83,37 +81,30 @@ function parseSummaryFields(summaryFields: any[]): {
   return { vendor, totalAmount, invoiceDate, billTo }
 }
 
-// Helper function to parse line items from LineItemGroups
 function parseLineItems(lineItemGroups: any[]): LineItem[] {
   const lineItems: LineItem[] = []
 
   lineItemGroups.forEach((group) => {
     if (!group.LineItems) return
-
     group.LineItems.forEach((item: any) => {
       let description = ''
       let quantity = 0
       let unit = ''
       let price = 0
-
       if (item.LineItemExpenseFields) {
         item.LineItemExpenseFields.forEach((field: any) => {
-          const fieldType = field.Type?.Text?.toLowerCase() || ''
+          const fieldType = (field.Type?.Text || '').toLowerCase()
           const fieldValue = field.ValueDetection?.Text || ''
-
           if (fieldType.includes('item') || fieldType.includes('product')) {
             description = fieldValue
           }
-          if (
-            fieldType.includes('quantity') ||
-            fieldType.includes('qty available')
-          ) {
+          if (fieldType.includes('quantity')) {
             const q = parseInt(fieldValue, 10)
             if (!isNaN(q)) {
               quantity = q
             }
           }
-          if (fieldType.includes('unit') || fieldType.includes('subtotal')) {
+          if (fieldType.includes('unit')) {
             unit = fieldValue
           }
           if (fieldType.includes('price')) {
@@ -136,24 +127,29 @@ function parseLineItems(lineItemGroups: any[]): LineItem[] {
 @Injectable()
 export class TextractParserService {
   parseExpense(textractOutput: any): ParsedExpense {
-    // Retrieve the first expense document.
-    const expenseDocument = textractOutput.ExpenseDocuments?.[0]
+    let expenseDocument = textractOutput.ExpenseDocuments?.[0]
+    // If ExpenseDocuments is not present, try to aggregate from Blocks.
+    if (!expenseDocument && textractOutput.Blocks) {
+      expenseDocument = aggregateExpenseDocument(textractOutput.Blocks)
+    }
     if (!expenseDocument) {
+      // Return defaults if no expense document could be derived.
       return {
         vendor: '',
         totalAmount: 0,
         invoiceDate: new Date(),
         lineItems: [],
+        billTo: {},
       }
     }
 
     const summaryFields = expenseDocument.SummaryFields || []
     const { vendor, totalAmount, invoiceDate, billTo } =
       parseSummaryFields(summaryFields)
-
     const lineItemGroups = expenseDocument.LineItemGroups || []
     const lineItems = parseLineItems(lineItemGroups)
 
     return { vendor, totalAmount, invoiceDate, lineItems, billTo }
   }
 }
+export { ParsedExpense }
