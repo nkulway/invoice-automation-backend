@@ -24,16 +24,16 @@ export class Invoice {
   @CreateDateColumn()
   createdAt: Date
 
-  @Column({ type: 'json', nullable: true })
-  parsedData?: any
-
-  // Optional: store full Textract response for debugging or further processing
-  @Column({ type: 'json', nullable: true })
-  textractData?: any
-
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  // Ensure this relation is correctly defined.
   @OneToMany(() => InvoiceLineItem, (lineItem) => lineItem.invoice, {
     cascade: true,
   })
   lineItems: InvoiceLineItem[]
+
+  // Optional: additional fields for raw/parsed data
+  @Column({ type: 'json', nullable: true })
+  parsedData?: any
+
+  @Column({ type: 'json', nullable: true })
+  textractData?: any
 }
