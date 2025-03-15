@@ -38,60 +38,70 @@ async function ensureDataSourceInitialized() {
   }
 }
 
-async function processInvoiceJob(messageBody: any) {
-  // Destructure job details
+async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
   const { invoiceId, s3Bucket, documentKey } = messageBody
-
-  // Use StartExpenseAnalysisCommand for expense documents (invoices)
-  const startCommand = new StartExpenseAnalysisCommand({
-    DocumentLocation: {
-      S3Object: {
-        Bucket: s3Bucket,
-        Name: documentKey,
+  try {
+    // Start expense analysis (using the StartExpenseAnalysisCommand)
+    const startCommand = new StartExpenseAnalysisCommand({
+      DocumentLocation: {
+        S3Object: {
+          Bucket: s3Bucket,
+          Name: documentKey,
+        },
       },
-    },
-    // Optionally specify additional parameters here if needed
-  })
+    })
+    const startResponse = await textractClient.send(startCommand)
+    const jobId = startResponse.JobId
+    console.log(
+      `Started Textract job for invoice ${invoiceId}, JobId: ${jobId}`,
+    )
 
-  const startResponse = await textractClient.send(startCommand)
-  const jobId = startResponse.JobId
-  console.log(
-    `Started Textract expense analysis for invoice ${invoiceId}, JobId: ${jobId}`,
-  )
-
-  // Poll for job completion using GetExpenseAnalysisCommand
-  let jobStatus = 'IN_PROGRESS'
-  let textractOutput: any
-  while (jobStatus === 'IN_PROGRESS') {
-    await delay(5000)
-    const getCommand = new GetExpenseAnalysisCommand({ JobId: jobId })
-    textractOutput = await textractClient.send(getCommand)
-    jobStatus = textractOutput.JobStatus || 'IN_PROGRESS'
-    console.log(`Invoice ${invoiceId} JobStatus: ${jobStatus}`)
-    if (jobStatus === 'FAILED') {
-      throw new Error(
-        `Textract expense analysis job failed for invoice ${invoiceId}`,
-      )
+    // Poll for job completion
+    let jobStatus = 'IN_PROGRESS'
+    let textractOutput: any
+    while (jobStatus === 'IN_PROGRESS') {
+      await delay(5000)
+      const getCommand = new GetExpenseAnalysisCommand({ JobId: jobId })
+      textractOutput = await textractClient.send(getCommand)
+      jobStatus = textractOutput.JobStatus || 'IN_PROGRESS'
+      console.log(`Invoice ${invoiceId} JobStatus: ${jobStatus}`)
+      if (jobStatus === 'FAILED') {
+        throw new Error(`Textract job failed for invoice ${invoiceId}`)
+      }
     }
-  }
 
-  // Process the Textract response through your parser
-  const parserService = new TextractParserService()
-  const parsedData = parserService.parseExpense(textractOutput)
+    // Process Textract response
+    const parserService = new TextractParserService()
+    const parsedData = parserService.parseExpense(textractOutput)
 
-  // Update the invoice record in the database using AppDataSource
-  const invoiceRepository = AppDataSource.getRepository(Invoice)
-  const invoice = await invoiceRepository.findOneBy({ id: invoiceId })
-  if (invoice) {
-    invoice.vendor = parsedData.vendor || invoice.vendor
-    invoice.totalAmount = parsedData.totalAmount || invoice.totalAmount
-    invoice.invoiceDate = parsedData.invoiceDate || invoice.invoiceDate
-    invoice.parsedData = parsedData
-    invoice.textractData = textractOutput
-    await invoiceRepository.save(invoice)
-    console.log(`Invoice ${invoiceId} updated with parsed Textract data`)
-  } else {
-    console.error(`Invoice ${invoiceId} not found`)
+    // Update the invoice record in the database
+    const invoiceRepository = AppDataSource.getRepository(Invoice)
+    const invoice = await invoiceRepository.findOneBy({ id: invoiceId })
+    if (invoice) {
+      invoice.vendor = parsedData.vendor || invoice.vendor
+      invoice.totalAmount = parsedData.totalAmount || invoice.totalAmount
+      invoice.invoiceDate = parsedData.invoiceDate || invoice.invoiceDate
+      invoice.parsedData = parsedData
+      invoice.textractData = textractOutput
+      await invoiceRepository.save(invoice)
+      console.log(`Invoice ${invoiceId} updated with parsed Textract data`)
+    } else {
+      console.error(`Invoice ${invoiceId} not found`)
+    }
+  } catch (err) {
+    console.error(
+      `Error processing invoice ${invoiceId} on attempt ${attempt}:`,
+      err,
+    )
+    // Retry up to a maximum (e.g., 3 attempts)
+    if (attempt < 3) {
+      await delay(5000) // wait before retrying
+      return processInvoiceJob(messageBody, attempt + 1)
+    } else {
+      // Optionally, log to a dead-letter queue here or update invoice record with failure status
+      console.error(`Invoice ${invoiceId} failed after ${attempt} attempts.`)
+      throw err
+    }
   }
 }
 
