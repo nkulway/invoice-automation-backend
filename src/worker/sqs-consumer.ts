@@ -41,7 +41,7 @@ async function ensureDataSourceInitialized() {
 async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
   const { invoiceId, s3Bucket, documentKey } = messageBody
   try {
-    // Start expense analysis (using the StartExpenseAnalysisCommand)
+    // Start asynchronous Textract expense analysis
     const startCommand = new StartExpenseAnalysisCommand({
       DocumentLocation: {
         S3Object: {
@@ -70,11 +70,11 @@ async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
       }
     }
 
-    // Process Textract response
+    // Process the Textract response through your parser
     const parserService = new TextractParserService()
     const parsedData = parserService.parseExpense(textractOutput)
 
-    // Update the invoice record in the database
+    // Update the invoice record in the database using AppDataSource
     const invoiceRepository = AppDataSource.getRepository(Invoice)
     const invoice = await invoiceRepository.findOneBy({ id: invoiceId })
     if (invoice) {
@@ -83,6 +83,8 @@ async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
       invoice.invoiceDate = parsedData.invoiceDate || invoice.invoiceDate
       invoice.parsedData = parsedData
       invoice.textractData = textractOutput
+      // Update processing status to COMPLETED
+      invoice.processingStatus = 'COMPLETED'
       await invoiceRepository.save(invoice)
       console.log(`Invoice ${invoiceId} updated with parsed Textract data`)
     } else {
@@ -93,13 +95,21 @@ async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
       `Error processing invoice ${invoiceId} on attempt ${attempt}:`,
       err,
     )
-    // Retry up to a maximum (e.g., 3 attempts)
+    // Exponential backoff delay: e.g., 5s * 2^(attempt-1)
+    const backoffDelay = 5000 * Math.pow(2, attempt - 1)
     if (attempt < 3) {
-      await delay(5000) // wait before retrying
+      console.log(`Retrying invoice ${invoiceId} after ${backoffDelay}ms...`)
+      await delay(backoffDelay)
       return processInvoiceJob(messageBody, attempt + 1)
     } else {
-      // Optionally, log to a dead-letter queue here or update invoice record with failure status
       console.error(`Invoice ${invoiceId} failed after ${attempt} attempts.`)
+      // Future: publish the message to a DLQ or mark the invoice as FAILED
+      const invoiceRepository = AppDataSource.getRepository(Invoice)
+      const invoice = await invoiceRepository.findOneBy({ id: invoiceId })
+      if (invoice) {
+        invoice.processingStatus = 'FAILED'
+        await invoiceRepository.save(invoice)
+      }
       throw err
     }
   }
