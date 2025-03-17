@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne } from 'typeorm'
 import { Invoice } from './invoice.entity'
 
@@ -12,6 +11,9 @@ export class InvoiceLineItem {
 
   @Column('int')
   quantity: number
+
+  @Column({ length: 100 })
+  unit: string
 
   @Column('decimal')
   price: number

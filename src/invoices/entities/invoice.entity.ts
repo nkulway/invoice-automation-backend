@@ -24,16 +24,18 @@ export class Invoice {
   @CreateDateColumn()
   createdAt: Date
 
-  @Column({ type: 'json', nullable: true })
-  parsedData?: any
+  // New field for processing status
+  @Column({ default: 'PENDING' })
+  processingStatus: string
 
-  // Optional: store full Textract response for debugging or further processing
-  @Column({ type: 'json', nullable: true })
-  textractData?: any
-
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   @OneToMany(() => InvoiceLineItem, (lineItem) => lineItem.invoice, {
     cascade: true,
   })
   lineItems: InvoiceLineItem[]
+
+  @Column({ type: 'json', nullable: true })
+  parsedData?: any
+
+  @Column({ type: 'json', nullable: true })
+  textractData?: any
 }
