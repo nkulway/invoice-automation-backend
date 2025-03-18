@@ -140,15 +140,15 @@ function parseLineItems(lineItemGroups: TextractLineItemGroup[]): LineItem[] {
 @Injectable()
 export class TextractParserService {
   parseExpense(textractOutput: unknown): ParsedExpense {
-    // Narrow the textractOutput type.
+    // Narrow the textractOutput type
     const output = textractOutput as TextractExpenseAnalysisResponse
 
-    // Try to get an expense document from ExpenseDocuments.
+    // Try to get expense document from ExpenseDocuments
     let expenseDocument: TextractExpenseDocument | undefined = undefined
     if (Array.isArray(output.ExpenseDocuments)) {
       expenseDocument = output.ExpenseDocuments[0]
     }
-    // If ExpenseDocuments is not present, try aggregating from Blocks.
+    // If ExpenseDocuments is not present, try getting from Blocks
     if (!expenseDocument && Array.isArray(output.Blocks)) {
       expenseDocument = aggregateExpenseDocument(output.Blocks)
     }
