@@ -1,32 +1,44 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable } from '@nestjs/common'
+import {
+  TextractExpenseAnalysisResponse,
+  TextractExpenseDocument,
+  TextractExpenseField,
+  TextractLineItemGroup,
+} from '../textract.types'
 import {
   ParsedExpense,
   LineItem,
   BillToAddress,
 } from './textract-parser.interfaces'
 
-// Aggregates an asynchronous Textract response
-function aggregateExpenseDocument(blocks: any[]): any {
-  const expenseDocument: any = {
-    SummaryFields: [] as any[],
-    LineItemGroups: [] as any[],
+/**
+ * Aggregates an asynchronous Textract response
+ */
+function aggregateExpenseDocument(blocks: unknown[]): TextractExpenseDocument {
+  const expenseDocument: TextractExpenseDocument = {
+    SummaryFields: [],
+    LineItemGroups: [],
   }
 
-  // For simplicity, we assume that KEY_VALUE_SET blocks are summary fields
   blocks.forEach((block) => {
-    if (block.BlockType === 'KEY_VALUE_SET') {
-      expenseDocument.SummaryFields.push(block)
+    if (typeof block === 'object' && block !== null) {
+      const blk = block as Record<string, unknown>
+      if (blk.BlockType === 'KEY_VALUE_SET') {
+        expenseDocument.SummaryFields?.push(
+          blk as unknown as TextractExpenseField,
+        )
+      }
+      // add logic here to group blocks into line items
     }
-    // Optionally, add logic to aggregate line items if your response contains them
   })
 
   return expenseDocument
 }
 
-function parseSummaryFields(summaryFields: any[]): {
+/**
+ * Parses an array of summary fields to extract vendor, total amount, invoice date, and bill-to information
+ */
+function parseSummaryFields(summaryFields: TextractExpenseField[]): {
   vendor: string
   totalAmount: number
   invoiceDate: Date
@@ -40,11 +52,9 @@ function parseSummaryFields(summaryFields: any[]): {
   summaryFields.forEach((field) => {
     const typeText = (field.Type?.Text || '').toLowerCase()
     const valueText = field.ValueDetection?.Text || ''
-    // Check if this field is part of a RECEIVER_BILL_TO group.
     const groupTypes: string[] = field.GroupProperties?.[0]?.Types || []
 
     if (groupTypes.includes('RECEIVER_BILL_TO')) {
-      // Map common field types to bill-to address field
       if (typeText.includes('address_block')) {
         billTo.addressBlock = valueText
       } else if (typeText.includes('street')) {
@@ -59,7 +69,6 @@ function parseSummaryFields(summaryFields: any[]): {
         billTo.name = valueText
       }
     } else {
-      // Process invoice header fields.
       if (typeText.includes('vendor')) {
         vendor = valueText
       }
@@ -81,18 +90,22 @@ function parseSummaryFields(summaryFields: any[]): {
   return { vendor, totalAmount, invoiceDate, billTo }
 }
 
-function parseLineItems(lineItemGroups: any[]): LineItem[] {
+/**
+ * Parses line item groups to extract an array of line items.
+ */
+function parseLineItems(lineItemGroups: TextractLineItemGroup[]): LineItem[] {
   const lineItems: LineItem[] = []
 
   lineItemGroups.forEach((group) => {
     if (!group.LineItems) return
-    group.LineItems.forEach((item: any) => {
+    group.LineItems.forEach((item) => {
       let description = ''
       let quantity = 0
       let unit = ''
       let price = 0
+
       if (item.LineItemExpenseFields) {
-        item.LineItemExpenseFields.forEach((field: any) => {
+        item.LineItemExpenseFields.forEach((field) => {
           const fieldType = (field.Type?.Text || '').toLowerCase()
           const fieldValue = field.ValueDetection?.Text || ''
           if (fieldType.includes('item') || fieldType.includes('product')) {
@@ -126,14 +139,20 @@ function parseLineItems(lineItemGroups: any[]): LineItem[] {
 
 @Injectable()
 export class TextractParserService {
-  parseExpense(textractOutput: any): ParsedExpense {
-    let expenseDocument = textractOutput.ExpenseDocuments?.[0]
-    // If ExpenseDocuments is not present, try to aggregate from Blocks.
-    if (!expenseDocument && textractOutput.Blocks) {
-      expenseDocument = aggregateExpenseDocument(textractOutput.Blocks)
+  parseExpense(textractOutput: unknown): ParsedExpense {
+    // Narrow the textractOutput type
+    const output = textractOutput as TextractExpenseAnalysisResponse
+
+    // Try to get expense document from ExpenseDocuments
+    let expenseDocument: TextractExpenseDocument | undefined = undefined
+    if (Array.isArray(output.ExpenseDocuments)) {
+      expenseDocument = output.ExpenseDocuments[0]
+    }
+    // If ExpenseDocuments is not present, try getting from Blocks
+    if (!expenseDocument && Array.isArray(output.Blocks)) {
+      expenseDocument = aggregateExpenseDocument(output.Blocks)
     }
     if (!expenseDocument) {
-      // Return defaults if no expense document could be derived.
       return {
         vendor: '',
         totalAmount: 0,
@@ -143,13 +162,18 @@ export class TextractParserService {
       }
     }
 
-    const summaryFields = expenseDocument.SummaryFields || []
+    const summaryFields = Array.isArray(expenseDocument.SummaryFields)
+      ? expenseDocument.SummaryFields
+      : []
     const { vendor, totalAmount, invoiceDate, billTo } =
       parseSummaryFields(summaryFields)
-    const lineItemGroups = expenseDocument.LineItemGroups || []
+    const lineItemGroups = Array.isArray(expenseDocument.LineItemGroups)
+      ? expenseDocument.LineItemGroups
+      : []
     const lineItems = parseLineItems(lineItemGroups)
 
     return { vendor, totalAmount, invoiceDate, lineItems, billTo }
   }
 }
+
 export { ParsedExpense }

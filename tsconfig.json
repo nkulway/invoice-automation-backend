@@ -12,10 +12,10 @@
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
-    "strictNullChecks": true,
+    "strict": true,
     "forceConsistentCasingInFileNames": true,
-    "noImplicitAny": false,
-    "strictBindCallApply": false,
-    "noFallthroughCasesInSwitch": false
+    "noImplicitAny": true, // stricter type safety
+    "strictBindCallApply": true, // stricter function call checking
+    "noFallthroughCasesInSwitch": true // fallthrough check in switch cases
   }
 }
