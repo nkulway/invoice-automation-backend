@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-misused-promises */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   SQSClient,
   ReceiveMessageCommand,
@@ -9,7 +6,9 @@ import {
 import {
   TextractClient,
   StartExpenseAnalysisCommand,
+  StartExpenseAnalysisCommandOutput,
   GetExpenseAnalysisCommand,
+  GetExpenseAnalysisCommandOutput,
 } from '@aws-sdk/client-textract'
 import { AppDataSource } from '../data-source'
 import * as dotenv from 'dotenv'
@@ -17,8 +16,16 @@ import { Invoice } from '../invoices/entities/invoice.entity'
 import { TextractParserService } from '../textract/services/textract-parser.service'
 dotenv.config()
 
+// Define an interface for the SQS job message
+interface InvoiceJob {
+  invoiceId: number
+  s3Bucket: string
+  documentKey: string
+}
+
 // Helper function for delay (for polling)
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms))
 
 // Setup AWS SQS client
 const sqsClient = new SQSClient({ region: process.env.AWS_REGION })
@@ -31,14 +38,17 @@ if (!queueUrl) {
 const textractClient = new TextractClient({ region: process.env.AWS_REGION })
 
 // Ensure DataSource is initialized
-async function ensureDataSourceInitialized() {
+async function ensureDataSourceInitialized(): Promise<void> {
   if (!AppDataSource.isInitialized) {
     await AppDataSource.initialize()
     console.log('Data Source has been initialized in consumer!')
   }
 }
 
-async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
+async function processInvoiceJob(
+  messageBody: InvoiceJob,
+  attempt = 1,
+): Promise<void> {
   const { invoiceId, s3Bucket, documentKey } = messageBody
   try {
     // Start asynchronous Textract expense analysis
@@ -50,7 +60,8 @@ async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
         },
       },
     })
-    const startResponse = await textractClient.send(startCommand)
+    const startResponse: StartExpenseAnalysisCommandOutput =
+      await textractClient.send(startCommand)
     const jobId = startResponse.JobId
     console.log(
       `Started Textract job for invoice ${invoiceId}, JobId: ${jobId}`,
@@ -58,10 +69,10 @@ async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
 
     // Poll for job completion
     let jobStatus = 'IN_PROGRESS'
-    let textractOutput: any
+    let textractOutput: GetExpenseAnalysisCommandOutput | undefined
     while (jobStatus === 'IN_PROGRESS') {
       await delay(5000)
-      const getCommand = new GetExpenseAnalysisCommand({ JobId: jobId })
+      const getCommand = new GetExpenseAnalysisCommand({ JobId: jobId! })
       textractOutput = await textractClient.send(getCommand)
       jobStatus = textractOutput.JobStatus || 'IN_PROGRESS'
       console.log(`Invoice ${invoiceId} JobStatus: ${jobStatus}`)
@@ -70,9 +81,9 @@ async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
       }
     }
 
-    // Process the Textract response through your parser
+    // Process the Textract response through the parser
     const parserService = new TextractParserService()
-    const parsedData = parserService.parseExpense(textractOutput)
+    const parsedData = parserService.parseExpense(textractOutput!)
 
     // Update the invoice record in the database using AppDataSource
     const invoiceRepository = AppDataSource.getRepository(Invoice)
@@ -83,7 +94,6 @@ async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
       invoice.invoiceDate = parsedData.invoiceDate || invoice.invoiceDate
       invoice.parsedData = parsedData
       invoice.textractData = textractOutput
-      // Update processing status to COMPLETED
       invoice.processingStatus = 'COMPLETED'
       await invoiceRepository.save(invoice)
       console.log(`Invoice ${invoiceId} updated with parsed Textract data`)
@@ -95,7 +105,6 @@ async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
       `Error processing invoice ${invoiceId} on attempt ${attempt}:`,
       err,
     )
-    // Exponential backoff delay: e.g., 5s * 2^(attempt-1)
     const backoffDelay = 5000 * Math.pow(2, attempt - 1)
     if (attempt < 3) {
       console.log(`Retrying invoice ${invoiceId} after ${backoffDelay}ms...`)
@@ -103,7 +112,6 @@ async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
       return processInvoiceJob(messageBody, attempt + 1)
     } else {
       console.error(`Invoice ${invoiceId} failed after ${attempt} attempts.`)
-      // Future: publish the message to a DLQ or mark the invoice as FAILED
       const invoiceRepository = AppDataSource.getRepository(Invoice)
       const invoice = await invoiceRepository.findOneBy({ id: invoiceId })
       if (invoice) {
@@ -115,7 +123,7 @@ async function processInvoiceJob(messageBody: any, attempt = 1): Promise<void> {
   }
 }
 
-async function pollQueue() {
+async function pollQueue(): Promise<void> {
   // Ensure DataSource is initialized
   await ensureDataSourceInitialized()
 
@@ -127,12 +135,18 @@ async function pollQueue() {
 
   try {
     const data = await sqsClient.send(new ReceiveMessageCommand(params))
-    if (data.Messages) {
+    if (data.Messages && data.Messages.length > 0) {
       for (const message of data.Messages) {
-        const messageBody = JSON.parse(message.Body || '{}')
+        // Safely parse the message body into an InvoiceJob.
+        let messageBody: InvoiceJob
+        try {
+          messageBody = JSON.parse(message.Body || '{}') as InvoiceJob
+        } catch (parseError) {
+          console.error('Error parsing message body:', parseError)
+          continue
+        }
         try {
           await processInvoiceJob(messageBody)
-          // Delete message after successful processing
           if (message.ReceiptHandle) {
             await sqsClient.send(
               new DeleteMessageCommand({
@@ -144,7 +158,7 @@ async function pollQueue() {
           }
         } catch (err) {
           console.error('Error processing job:', err)
-          // Optionally implement retry logic or move the message to a dead-letter queue
+          // Optionally, implement further retry logic or move the message to a DLQ.
         }
       }
     } else {
@@ -154,8 +168,10 @@ async function pollQueue() {
     console.error('Error receiving messages:', error)
   }
 
-  // Continue polling
-  setTimeout(pollQueue, 5000)
+  // Continue polling (wrap in arrow function to ensure void return)
+  setTimeout(() => {
+    pollQueue()
+  }, 5000)
 }
 
 pollQueue().catch(console.error)
